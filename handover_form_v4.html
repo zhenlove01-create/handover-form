@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>臻愛一生 · 跨班交接確認表</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Noto Sans TC',sans-serif;background:#F0F4F0;min-height:100vh}
+button{cursor:pointer;font-family:inherit}
+input,textarea,select{font-family:inherit;outline:none}
+textarea{resize:vertical}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+<script>
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyBgk1HldJWelo6PIEmyS9SX3P6OYYHCB4Y",
+  authDomain:"zhenai-handover.firebaseapp.com",
+  databaseURL:"https://zhenai-handover-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:"zhenai-handover",
+  storageBucket:"zhenai-handover.firebasestorage.app",
+  messagingSenderId:"432069396790",
+  appId:"1:432069396790:web:d16125628eb285608fcb97"
+};
+const MANAGER_EMAILS=["zhenlove01@gmail.com","f0907946166@gmail.com","lee910117@gmail.com","emmama5168@gmail.com","goldlee2601@gmail.com","wt2004930416@gmail.com","zhenlove03@gmail.com","hfhenrychen@gmail.com"];
+const STAFF_NAMES=["韋霆","佳妤","秀鳳","一婷","容綺","丞興","明峰","巧伶","鎬宇","曉峰","元銘"];
+
+const CONFIG_READY=!Object.values(FIREBASE_CONFIG).some(v=>v.startsWith("貼上"));
+let db=null,fbAuth=null;
+if(CONFIG_READY){try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.database();fbAuth=firebase.auth();}catch(e){console.error(e);}}
+</script>
+<script type="text/babel">
+const{useState,useEffect,useRef}=React;
+const PRIMARY="#0F6E56",MGR="#1A237E",DAY_TW=["日","一","二","三","四","五","六"];
+const todayKey=()=>new Date().toISOString().slice(0,10);
+const fmtDt=ts=>ts?new Date(ts).toLocaleString("zh-TW",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"—";
+const fmtDate=d=>{const dt=new Date(d+"T00:00:00");return`${dt.getFullYear()}/${dt.getMonth()+1}/${dt.getDate()}（${DAY_TW[dt.getDay()]}）`;};
+
+const dbGet=p=>db.ref(p).once("value").then(s=>s.val());
+const dbSet=(p,v)=>db.ref(p).set(v);
+const dbUpd=(p,v)=>db.ref(p).update(v);
+const dbDel=p=>db.ref(p).remove();
+
+// ── 共用小元件 ──
+const inp={width:"100%",padding:"10px 12px",border:"0.5px solid #D1D5DB",borderRadius:8,fontSize:14,background:"#fff",color:"#111"};
+const lbl={fontSize:14,fontWeight:500,color:"#374151",display:"block",marginBottom:6,lineHeight:1.5};
+const rowSt={padding:"12px 14px",borderBottom:"0.5px solid #F3F4F6"};
+
+function Radio3({label,hint,value,onChange,disabled}){
+  const opts=[{v:"done",l:"✓ 已完成",c:"#065F46",bg:"#ECFDF5",bc:"#065F46"},{v:"notdone",l:"✗ 未完成",c:"#991B1B",bg:"#FEF2F2",bc:"#991B1B"},{v:"na",l:"— 不適用",c:"#374151",bg:"#F3F4F6",bc:"#9CA3AF"}];
+  return<div style={rowSt}>
+    <div style={lbl}>{label}</div>
+    <div style={{display:"flex",gap:6}}>
+      {opts.map(o=><button key={o.v} onClick={()=>!disabled&&onChange(o.v)} style={{flex:1,padding:"9px 4px",border:"1.5px solid "+(value===o.v?o.bc:"#E5E7EB"),borderRadius:8,background:value===o.v?o.bg:"#fff",color:value===o.v?o.c:"#9CA3AF",fontSize:12,fontWeight:value===o.v?600:400,opacity:disabled?0.7:1}}>{o.l}</button>)}
+    </div>
+    {hint&&<div style={{fontSize:12,color:"#9CA3AF",marginTop:4}}>{hint}</div>}
+  </div>;
+}
+
+function AlertSel({value,onChange,opts,disabled}){
+  const colors={urgent:{c:"#991B1B",bg:"#FEF2F2",bc:"#991B1B"},caution:{c:"#92400E",bg:"#FFFBEB",bc:"#D97706"},ok:{c:"#065F46",bg:"#ECFDF5",bc:"#065F46"}};
+  return<div style={rowSt}>
+    <div style={lbl}>警示等級</div>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {opts.map(o=><button key={o.v} onClick={()=>!disabled&&onChange(o.v)} style={{padding:"10px 12px",border:"1.5px solid "+(value===o.v?colors[o.c].bc:"#E5E7EB"),borderRadius:8,background:value===o.v?colors[o.c].bg:"#fff",color:value===o.v?colors[o.c].c:"#6B7280",fontSize:13,fontWeight:value===o.v?600:400,textAlign:"left",opacity:disabled?0.7:1}}>{o.l}</button>)}
+    </div>
+  </div>;
+}
+
+function TA({label,hint,value,onChange,placeholder,rows=3,disabled,required}){
+  return<div style={rowSt}>
+    <label style={lbl}>{label}{required&&<span style={{color:"#EF4444",marginLeft:2}}>*</span>}</label>
+    <textarea value={value||""} onChange={e=>!disabled&&onChange(e.target.value)} rows={rows} placeholder={placeholder} disabled={disabled} style={{...inp,minHeight:rows*28,opacity:disabled?0.7:1}}/>
+    {hint&&<div style={{fontSize:12,color:"#9CA3AF",marginTop:4}}>{hint}</div>}
+  </div>;
+}
+
+function AnimalTable({rows,onChange,disabled}){
+  const r=rows||[];
+  const add=()=>onChange([...r,{name:"",species:"",feed:"",meds:"",status:"ok",note:""}]);
+  const upd=(i,k,v)=>{const nr=[...r];nr[i]={...nr[i],[k]:v};onChange(nr);};
+  const del=(i)=>onChange(r.filter((_,j)=>j!==i));
+  const stO=[{v:"urgent",l:"🔴 緊急"},{v:"caution",l:"🟡 注意"},{v:"ok",l:"🟢 穩定"}];
+  const stC={urgent:"#FEF2F2",caution:"#FFFBEB",ok:"#ECFDF5"};
+  const stT={urgent:"#991B1B",caution:"#92400E",ok:"#065F46"};
+  const i2={width:"100%",border:"0.5px solid #E5E7EB",borderRadius:6,padding:"6px 8px",fontSize:13,background:"#fff"};
+  return<div style={{...rowSt,background:"#FAFAFA"}}>
+    <div style={lbl}>個別動物狀態記錄</div>
+    {r.map((a,i)=><div key={i} style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:8,padding:10,marginBottom:8}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>動物名</div><input value={a.name} onChange={e=>upd(i,"name",e.target.value)} style={i2} placeholder="例：Bagel" disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>品種</div><input value={a.species} onChange={e=>upd(i,"species",e.target.value)} style={i2} placeholder="例：米克斯" disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>餵食量</div><input value={a.feed} onChange={e=>upd(i,"feed",e.target.value)} style={i2} placeholder="例：410ml" disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>用藥/點滴</div><input value={a.meds} onChange={e=>upd(i,"meds",e.target.value)} style={i2} placeholder="例：點滴500ml" disabled={disabled}/></div>
+      </div>
+      <div style={{marginBottom:6}}><div style={{fontSize:11,color:"#9CA3AF",marginBottom:4}}>狀態</div>
+        <div style={{display:"flex",gap:4}}>
+          {stO.map(o=><button key={o.v} onClick={()=>!disabled&&upd(i,"status",o.v)} style={{flex:1,padding:"7px 4px",border:"1.5px solid "+(a.status===o.v?"currentColor":"#E5E7EB"),borderRadius:6,background:a.status===o.v?stC[o.v]:"#fff",color:a.status===o.v?stT[o.v]:"#9CA3AF",fontSize:12,fontWeight:a.status===o.v?600:400}}>{o.l}</button>)}
+        </div>
+      </div>
+      <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>備註</div><input value={a.note} onChange={e=>upd(i,"note",e.target.value)} style={i2} placeholder="特殊注意事項" disabled={disabled}/></div>
+      {!disabled&&<button onClick={()=>del(i)} style={{marginTop:8,width:"100%",padding:"6px",border:"0.5px solid #FECACA",borderRadius:6,background:"#FEF2F2",color:"#991B1B",fontSize:12}}>移除</button>}
+    </div>)}
+    {!disabled&&<button onClick={add} style={{width:"100%",padding:"10px",border:"1.5px dashed "+PRIMARY,borderRadius:8,background:"#ECFDF5",color:PRIMARY,fontSize:13,fontWeight:500}}>+ 新增動物記錄</button>}
+  </div>;
+}
+
+function FeeTable({rows,onChange,disabled}){
+  const r=rows||[];
+  const add=()=>onChange([...r,{name:"",item:"",amount:"",status:"pending",date:"",note:""}]);
+  const upd=(i,k,v)=>{const nr=[...r];nr[i]={...nr[i],[k]:v};onChange(nr);};
+  const del=(i)=>onChange(r.filter((_,j)=>j!==i));
+  const stO=[{v:"pending",l:"待收",c:"#92400E",bg:"#FFFBEB"},{v:"paid",l:"已收",c:"#065F46",bg:"#ECFDF5"},{v:"refund",l:"退款待辦",c:"#1E40AF",bg:"#EFF6FF"}];
+  const i2={width:"100%",border:"0.5px solid #E5E7EB",borderRadius:6,padding:"6px 8px",fontSize:13,background:"#fff"};
+  return<div style={{...rowSt,background:"#FFFBEB"}}>
+    <div style={lbl}>💰 未結費用追蹤</div>
+    {r.map((f,i)=><div key={i} style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:8,padding:10,marginBottom:8}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>動物名</div><input value={f.name} onChange={e=>upd(i,"name",e.target.value)} style={i2} disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>費用項目</div><input value={f.item} onChange={e=>upd(i,"item",e.target.value)} style={i2} disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>金額</div><input value={f.amount} onChange={e=>upd(i,"amount",e.target.value)} style={i2} disabled={disabled}/></div>
+        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>首次記錄日</div><input value={f.date} onChange={e=>upd(i,"date",e.target.value)} style={i2} disabled={disabled}/></div>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:6}}>
+        {stO.map(o=><button key={o.v} onClick={()=>!disabled&&upd(i,"status",o.v)} style={{flex:1,padding:"6px 4px",border:"1.5px solid "+(f.status===o.v?"currentColor":"#E5E7EB"),borderRadius:6,background:f.status===o.v?o.bg:"#fff",color:f.status===o.v?o.c:"#9CA3AF",fontSize:12,fontWeight:f.status===o.v?600:400}}>{o.l}</button>)}
+      </div>
+      {!disabled&&<button onClick={()=>del(i)} style={{width:"100%",padding:"6px",border:"0.5px solid #FECACA",borderRadius:6,background:"#FEF2F2",color:"#991B1B",fontSize:12}}>移除</button>}
+    </div>)}
+    {!disabled&&<button onClick={add} style={{width:"100%",padding:"10px",border:"1.5px dashed #D97706",borderRadius:8,background:"#FFFBEB",color:"#92400E",fontSize:13,fontWeight:500}}>+ 新增費用記錄</button>}
+  </div>;
+}
+
+// ── Section Wrapper（認領 + 確認機制）──
+function SectionWrapper({date,shift,sectionKey,label,color,bgColor,currentUser,isManager,children}){
+  const[claimants,setClaimants]=useState({});
+  const[confirmations,setConfirmations]=useState({});
+  const[open,setOpen]=useState(true);
+  const path=`forms/${date}/${shift}/sections/${sectionKey}`;
+
+  useEffect(()=>{
+    const refC=db.ref(path+"/claimants");
+    const refK=db.ref(path+"/confirmations");
+    refC.on("value",s=>setClaimants(s.val()||{}));
+    refK.on("value",s=>setConfirmations(s.val()||{}));
+    return()=>{refC.off();refK.off();};
+  },[path]);
+
+  const isClaimed=!!claimants[currentUser?.uid];
+  const isConfirmed=!!confirmations[currentUser?.uid];
+  const claimCount=Object.keys(claimants).length;
+  const confirmCount=Object.keys(confirmations).length;
+  const allConfirmed=claimCount>0&&confirmCount>=claimCount&&Object.keys(claimants).every(uid=>!!confirmations[uid]);
+
+  const toggleClaim=async()=>{
+    if(isClaimed){
+      await dbDel(path+"/claimants/"+currentUser.uid);
+      await dbDel(path+"/confirmations/"+currentUser.uid);
+    } else {
+      await dbSet(path+"/claimants/"+currentUser.uid,currentUser.name);
+    }
+  };
+
+  const doConfirm=async()=>{
+    if(!isClaimed){alert("請先點「我負責此區」認領後再確認");return;}
+    await dbSet(path+"/confirmations/"+currentUser.uid,Date.now());
+  };
+
+  return<div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
+    <div style={{background:color,color:"#fff",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setOpen(o=>!o)}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:15,fontWeight:600}}>{label}</span>
+        {allConfirmed&&<span style={{fontSize:11,background:"rgba(255,255,255,0.25)",borderRadius:8,padding:"2px 8px"}}>✅ 已完成</span>}
+        {!allConfirmed&&claimCount>0&&<span style={{fontSize:11,background:"rgba(255,255,255,0.2)",borderRadius:8,padding:"2px 8px"}}>{confirmCount}/{claimCount} 已確認</span>}
+      </div>
+      <span style={{fontSize:12,opacity:0.8}}>{open?"▲":"▼"}</span>
+    </div>
+
+    {open&&<div>
+      {/* 認領狀態列 */}
+      <div style={{padding:"10px 14px",background:bgColor,borderBottom:"0.5px solid #F3F4F6"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"#6B7280",flexShrink:0}}>填報人：</span>
+          {claimCount===0&&<span style={{fontSize:12,color:"#9CA3AF"}}>尚無人認領</span>}
+          {Object.entries(claimants).map(([uid,name])=>{
+            const confirmed=!!confirmations[uid];
+            return<span key={uid} style={{fontSize:12,padding:"3px 10px",borderRadius:10,background:confirmed?"#ECFDF5":"#FEF3C7",color:confirmed?"#065F46":"#92400E",fontWeight:500}}>
+              {confirmed?"✅ ":"⏳ "}{name}
+            </span>;
+          })}
+          {!isManager&&<button onClick={toggleClaim} style={{marginLeft:"auto",padding:"5px 12px",border:"1.5px solid "+(isClaimed?color:"#D1D5DB"),borderRadius:8,background:isClaimed?bgColor:"#fff",color:isClaimed?color:"#6B7280",fontSize:12,fontWeight:isClaimed?600:400,flexShrink:0}}>
+            {isClaimed?"取消認領":"我負責此區"}
+          </button>}
+        </div>
+      </div>
+
+      {/* 表單內容 */}
+      <div>{children}</div>
+
+      {/* 確認按鈕 */}
+      {!isManager&&isClaimed&&!isConfirmed&&<div style={{padding:"12px 14px",borderTop:"0.5px solid #F3F4F6"}}>
+        <button onClick={doConfirm} style={{width:"100%",padding:"12px",border:"none",borderRadius:8,background:color,color:"#fff",fontSize:14,fontWeight:600}}>確認本區內容正確</button>
+        <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center",marginTop:6}}>確認後代表你對本區內容負責</div>
+      </div>}
+      {!isManager&&isClaimed&&isConfirmed&&<div style={{padding:"10px 14px",borderTop:"0.5px solid #F3F4F6",background:"#ECFDF5",textAlign:"center",fontSize:13,color:"#065F46",fontWeight:500}}>✅ 你已確認本區內容</div>}
+    </div>}
+  </div>;
+}
+
+// ── 早班表單 ──
+function EarlyForm({date,currentUser,isManager}){
+  const[data,setData]=useState({});
+  const[saving,setSaving]=useState(false);
+  const[submitted,setSubmitted]=useState(null);
+  const base=`forms/${date}/early`;
+  const sw={date,shift:"early",currentUser,isManager};
+
+  useEffect(()=>{
+    const ref=db.ref(base+"/items");
+    ref.on("value",s=>setData(s.val()||{}));
+    db.ref(base+"/submitted").once("value").then(s=>setSubmitted(s.val()));
+    return()=>ref.off();
+  },[date]);
+
+  const up=(key,val)=>{
+    dbSet(base+"/items/"+key,val);
+    setData(p=>({...p,[key]:val}));
+  };
+  const upObj=(prefix,obj)=>Object.entries(obj).forEach(([k,v])=>up(prefix+"_"+k,v));
+
+  const d=disabled=>disabled||false;
+  const isLocked=!!submitted;
+
+  const eAlertOpts=[
+    {v:"urgent",c:"urgent",l:"🔴 有緊急狀況（備註說明 + 致電主管）"},
+    {v:"caution",c:"caution",l:"🟡 有需注意事項（備註說明）"},
+    {v:"ok",c:"ok",l:"🟢 全部穩定"},
+  ];
+
+  // submit: 需確認所有 section 都有至少一人確認
+  const handleSubmit=async()=>{
+    if(!data.overall_selfeval){alert("請完成「整體評估」必填欄位");return;}
+    if(!data.overall_urgent){alert("請填寫是否有緊急事項");return;}
+    if(!confirm("確定送出早班交接表？送出後記錄永久保存。"))return;
+    setSaving(true);
+    await dbSet(base+"/submitted",{by:currentUser.uid,name:currentUser.name,at:Date.now()});
+    setSubmitted({by:currentUser.uid,name:currentUser.name,at:Date.now()});
+    setSaving(false);
+    alert("早班交接表已送出！");
+  };
+
+  return<div>
+    <div style={{background:"#1565C0",color:"#fff",padding:"12px 14px",borderRadius:"10px 10px 0 0",marginBottom:8}}>
+      <div style={{fontSize:16,fontWeight:600}}>🌅 早班填寫區</div>
+      <div style={{fontSize:12,opacity:0.8,marginTop:3}}>請於交班前 15 分鐘完成填寫</div>
+    </div>
+    {submitted&&<div style={{background:"#ECFDF5",border:"0.5px solid #A7F3D0",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:13,color:PRIMARY}}>✅ 已由 {submitted.name} 於 {fmtDt(submitted.at)} 送出</div>}
+    <div style={{background:"#EFF6FF",border:"0.5px solid #BFDBFE",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:12,color:"#1E40AF",lineHeight:1.7}}>
+      勾選說明：<strong>✓ 已完成</strong> ／ <strong>✗ 未完成</strong>（備註說明原因）／ <strong>— 不適用</strong>（如無住院動物）<br/>
+      請認領你負責的區塊，填寫完畢後點「確認本區內容正確」。
+    </div>
+
+    {/* 一、動物狀態 - 診所區 */}
+    <SectionWrapper {...sw} sectionKey="clinic" label="🏥 診所區（最高優先）" color="#991B1B" bgColor="#FEF2F2">
+      <Radio3 label="住院動物用藥記錄已更新" value={data.clinic_meds} onChange={v=>up("clinic_meds",v)} disabled={isLocked}/>
+      <Radio3 label="點滴 / 注射時間表已交接（交晚班繼續執行）" value={data.clinic_drip} onChange={v=>up("clinic_drip",v)} disabled={isLocked}/>
+      <Radio3 label="術後觀察動物狀況已書面記錄" value={data.clinic_postop} onChange={v=>up("clinic_postop",v)} disabled={isLocked}/>
+      <Radio3 label="異常動物已通知獸醫及主管" hint="例：3號貓術後持續注意" value={data.clinic_abnormal} onChange={v=>up("clinic_abnormal",v)} disabled={isLocked}/>
+      <Radio3 label="醫療廢棄物已依規定處理" value={data.clinic_waste} onChange={v=>up("clinic_waste",v)} disabled={isLocked}/>
+      <AlertSel value={data.clinic_alert} onChange={v=>up("clinic_alert",v)} opts={eAlertOpts} disabled={isLocked}/>
+      <TA label="診所備註 / 給晚班的交代" placeholder="例：2號住院犬今晚21:00需補充點滴，請晚班注意。無則填「無」。" value={data.clinic_note} onChange={v=>up("clinic_note",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 一、動物狀態 - 旅館區 */}
+    <SectionWrapper {...sw} sectionKey="hotel" label="🏨 旅館區" color="#92400E" bgColor="#FFFBEB">
+      <Radio3 label="上午餵食記錄已完成（含特殊飲食需求）" value={data.hotel_feed} onChange={v=>up("hotel_feed",v)} disabled={isLocked}/>
+      <Radio3 label="飲水已補充" value={data.hotel_water} onChange={v=>up("hotel_water",v)} disabled={isLocked}/>
+      <Radio3 label="動物情緒 / 異常行為已記錄" value={data.hotel_behavior} onChange={v=>up("hotel_behavior",v)} disabled={isLocked}/>
+      <Radio3 label="客戶特殊留言 / 需求已書面記錄交晚班" value={data.hotel_client} onChange={v=>up("hotel_client",v)} disabled={isLocked}/>
+      <Radio3 label="初次入住動物適應狀況已說明" value={data.hotel_new} onChange={v=>up("hotel_new",v)} disabled={isLocked}/>
+      <AlertSel value={data.hotel_alert} onChange={v=>up("hotel_alert",v)} opts={[{v:"urgent",c:"urgent",l:"🔴 有緊急狀況（備註說明）"},{v:"caution",c:"caution",l:"🟡 有需注意事項（備註說明）"},{v:"ok",c:"ok",l:"🟢 全部穩定"}]} disabled={isLocked}/>
+      <AnimalTable rows={data.hotel_animals} onChange={v=>up("hotel_animals",v)} disabled={isLocked}/>
+      <TA label="旅館備註 / 給晚班注意事項" placeholder="例：A3籠只能餵原廠飼料；B5籠今晨進食量少請晚班留意。無則填「無」。" value={data.hotel_note} onChange={v=>up("hotel_note",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 二、環境清潔 */}
+    <SectionWrapper {...sw} sectionKey="cleaning" label="二、環境清潔（早班段）" color="#075985" bgColor="#F0F9FF">
+      <Radio3 label="診療室清潔消毒" value={data.clean_clinic} onChange={v=>up("clean_clinic",v)} disabled={isLocked}/>
+      <Radio3 label="候診 / 接待區打掃" value={data.clean_waiting} onChange={v=>up("clean_waiting",v)} disabled={isLocked}/>
+      <Radio3 label="復健區清潔已完成 / 器材無異常" hint="若有異常請備註說明並通報主管" value={data.clean_rehab} onChange={v=>up("clean_rehab",v)} disabled={isLocked}/>
+      <Radio3 label="泳池區清潔已完成 / 設備無異常" hint="若有異常請備註說明並通報主管" value={data.clean_pool} onChange={v=>up("clean_pool",v)} disabled={isLocked}/>
+      <Radio3 label="洗手台 / 消毒液已補充" value={data.clean_sink} onChange={v=>up("clean_sink",v)} disabled={isLocked}/>
+      <Radio3 label="早班產生之排泄物 / 垃圾已清理" value={data.clean_trash} onChange={v=>up("clean_trash",v)} disabled={isLocked}/>
+      <TA label="⚠️ 早班清潔未完成項目（必填）" hint="請說明原因，由早班填寫並負責。全部完成填「無」。" placeholder="無" value={data.clean_incomplete} onChange={v=>up("clean_incomplete",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 三、行政事項 */}
+    <SectionWrapper {...sw} sectionKey="admin" label="三、行政事項（早班段）" color="#374151" bgColor="#F9FAFB">
+      <Radio3 label="今日帳款已核對，待收款已記錄" value={data.admin_accounts} onChange={v=>up("admin_accounts",v)} disabled={isLocked}/>
+      <Radio3 label="客戶來電 / 訊息已回覆或記錄待辦" value={data.admin_calls} onChange={v=>up("admin_calls",v)} disabled={isLocked}/>
+      <Radio3 label="設備異常已通報維修" value={data.admin_equipment} onChange={v=>up("admin_equipment",v)} disabled={isLocked}/>
+      <FeeTable rows={data.admin_fees} onChange={v=>up("admin_fees",v)} disabled={isLocked}/>
+      <TA label="⚠️ 早班行政未完成事項（必填）" hint="請說明原因，由早班填寫並負責。全部完成填「無」。" placeholder="無" value={data.admin_incomplete} onChange={v=>up("admin_incomplete",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 四、整體評估 */}
+    <div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
+      <div style={{background:"#37474F",color:"#fff",padding:"10px 14px",fontSize:15,fontWeight:600}}>四、早班整體評估 ⚠️ 必填後才可送出</div>
+      <div style={rowSt}>
+        <div style={lbl}>早班整體自評<span style={{color:"#EF4444",marginLeft:2}}>*</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[["ok","🟢 完整：所有事項均已處理或書面交代晚班"],["mostly","🟡 大致完整：少數未完成事項已在上方說明"],["major","🔴 重大遺漏：請立即致電主管"]].map(([v,l])=>
+            <button key={v} onClick={()=>!isLocked&&up("overall_selfeval",v)} style={{padding:"10px 12px",border:"1.5px solid "+(data.overall_selfeval===v?"#374151":"#E5E7EB"),borderRadius:8,background:data.overall_selfeval===v?"#F9FAFB":"#fff",color:data.overall_selfeval===v?"#111":"#6B7280",fontSize:13,fontWeight:data.overall_selfeval===v?600:400,textAlign:"left",opacity:isLocked?0.7:1}}>{l}</button>)}
+        </div>
+      </div>
+      <div style={rowSt}>
+        <div style={lbl}>是否有緊急事項需立即通知主管？<span style={{color:"#EF4444",marginLeft:2}}>*</span></div>
+        <div style={{display:"flex",gap:8}}>
+          {[["no","✅ 否"],["yes","🔴 是（填完後立即致電主管）"]].map(([v,l])=>
+            <button key={v} onClick={()=>!isLocked&&up("overall_urgent",v)} style={{flex:1,padding:"10px",border:"1.5px solid "+(data.overall_urgent===v?(v==="yes"?"#991B1B":PRIMARY):"#E5E7EB"),borderRadius:8,background:data.overall_urgent===v?(v==="yes"?"#FEF2F2":"#ECFDF5"):"#fff",color:data.overall_urgent===v?(v==="yes"?"#991B1B":PRIMARY):"#6B7280",fontSize:13,fontWeight:data.overall_urgent===v?600:400,opacity:isLocked?0.7:1}}>{l}</button>)}
+        </div>
+      </div>
+      <TA label="給晚班 / 主管的備註" placeholder="晚班特別需注意的事項。無則填「無」。" value={data.overall_note} onChange={v=>up("overall_note",v)} disabled={isLocked}/>
+    </div>
+
+    {/* 交接聲明 */}
+    <div style={{background:"#E8EAF6",border:"0.5px solid #C5CAE9",borderRadius:10,padding:"12px 14px",marginBottom:10,fontSize:13,color:"#1A237E",lineHeight:1.8}}>
+      📌 凡已載明的未完成工作，責任由早班填寫人承擔，直到晚班有明確完成記錄為止。<br/>
+      📌 凡未載明的未完成工作，視為已完成，後續發現問題責任由晚班承擔。
+    </div>
+
+    {!isLocked&&!isManager&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:"#1565C0",color:"#fff",fontSize:16,fontWeight:600,marginBottom:16}}>
+      {saving?"送出中...":"送出早班交接表"}
+    </button>}
+  </div>;
+}
+
+// ── 晚班表單 ──
+function LateForm({date,currentUser,isManager}){
+  const[data,setData]=useState({});
+  const[saving,setSaving]=useState(false);
+  const[submitted,setSubmitted]=useState(null);
+  const[nextDay,setNextDay]=useState(null);
+  const base=`forms/${date}/late`;
+  const sw={date,shift:"late",currentUser,isManager};
+
+  useEffect(()=>{
+    const ref=db.ref(base+"/items");
+    ref.on("value",s=>setData(s.val()||{}));
+    db.ref(base+"/submitted").once("value").then(s=>setSubmitted(s.val()));
+    db.ref(base+"/nextDayConfirm").once("value").then(s=>setNextDay(s.val()));
+    return()=>ref.off();
+  },[date]);
+
+  const up=(key,val)=>{dbSet(base+"/items/"+key,val);setData(p=>({...p,[key]:val}));};
+  const isLocked=!!submitted;
+
+  const lAlertOpts=[
+    {v:"urgent",c:"urgent",l:"🔴 有緊急狀況（已致電主管）"},
+    {v:"caution",c:"caution",l:"🟡 有需早班注意事項（備註說明）"},
+    {v:"ok",c:"ok",l:"🟢 全部穩定"},
+  ];
+
+  const handleSubmit=async()=>{
+    if(!data.overall_selfeval){alert("請完成「整體評估」必填欄位");return;}
+    if(!data.overall_urgent){alert("請填寫是否有緊急事項");return;}
+    if(!confirm("確定送出晚班收班表？送出後記錄永久保存。"))return;
+    setSaving(true);
+    await dbSet(base+"/submitted",{by:currentUser.uid,name:currentUser.name,at:Date.now()});
+    setSubmitted({by:currentUser.uid,name:currentUser.name,at:Date.now()});
+    setSaving(false);
+    alert("晚班收班表已送出！");
+  };
+
+  const handleNextDayConfirm=async()=>{
+    if(!confirm("確認你已閱讀昨日晚班所有記錄？"))return;
+    const nd={by:currentUser.uid,name:currentUser.name,at:Date.now()};
+    await dbSet(base+"/nextDayConfirm",nd);
+    setNextDay(nd);
+    alert("已確認閱讀晚班記錄！");
+  };
+
+  return<div>
+    <div style={{background:MGR,color:"#fff",padding:"12px 14px",borderRadius:"10px 10px 0 0",marginBottom:8}}>
+      <div style={{fontSize:16,fontWeight:600}}>🌙 晚班收班填寫區</div>
+      <div style={{fontSize:12,opacity:0.8,marginTop:3}}>請於收班前 15 分鐘完成填寫</div>
+    </div>
+    {submitted&&<div style={{background:"#ECFDF5",border:"0.5px solid #A7F3D0",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:13,color:PRIMARY}}>✅ 已由 {submitted.name} 於 {fmtDt(submitted.at)} 送出</div>}
+    <div style={{background:"#E8EAF6",border:"0.5px solid #C5CAE9",borderRadius:8,padding:"10px 14px",marginBottom:10,fontSize:12,color:MGR,lineHeight:1.7}}>
+      晚班是當日最後在場的人員，本頁由晚班獨立填寫並送出。<br/>
+      🌅 <strong>早班隔天到班後的第一件事</strong>：閱讀本頁，確認晚班完成狀況，並點「早班閱讀確認」。
+    </div>
+
+    {/* 一、晚班核心照護 - 診所區 */}
+    <SectionWrapper {...sw} sectionKey="clinic" label="🏥 診所區（晚班繼續執行）" color="#991B1B" bgColor="#FEF2F2">
+      <Radio3 label="點滴 / 注射時間表已完整執行完畢" value={data.clinic_drip} onChange={v=>up("clinic_drip",v)} disabled={isLocked}/>
+      <Radio3 label="住院動物收班前逐一巡視確認" value={data.clinic_rounds} onChange={v=>up("clinic_rounds",v)} disabled={isLocked}/>
+      <Radio3 label="異常動物已通知獸醫或主管" value={data.clinic_abnormal} onChange={v=>up("clinic_abnormal",v)} disabled={isLocked}/>
+      <Radio3 label="夜間用藥備妥（若有隔夜住院動物）" value={data.clinic_meds} onChange={v=>up("clinic_meds",v)} disabled={isLocked}/>
+      <Radio3 label="醫療設備已關閉或設定待機" value={data.clinic_equip} onChange={v=>up("clinic_equip",v)} disabled={isLocked}/>
+      <Radio3 label="氧氣瓶存量已確認（備註標示剩餘量）" hint="存量不足請說明並通報主管" value={data.clinic_oxygen} onChange={v=>up("clinic_oxygen",v)} disabled={isLocked}/>
+      <Radio3 label="藥品冰箱溫度已確認" value={data.clinic_fridge} onChange={v=>up("clinic_fridge",v)} disabled={isLocked}/>
+      <AlertSel value={data.clinic_alert} onChange={v=>up("clinic_alert",v)} opts={lAlertOpts} disabled={isLocked}/>
+      <TA label="診所收班備註 / 給早班的交代" placeholder="例：3號住院貓今晚情緒不安，早班到班後請優先查看。無則填「無」。" value={data.clinic_note} onChange={v=>up("clinic_note",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 一、晚班核心照護 - 旅館區 */}
+    <SectionWrapper {...sw} sectionKey="hotel" label="🏨 旅館區" color="#92400E" bgColor="#FFFBEB">
+      <Radio3 label="所有籠位動物已隨行巡房（收班前最後一巡）" value={data.hotel_rounds} onChange={v=>up("hotel_rounds",v)} disabled={isLocked}/>
+      <Radio3 label="晚餐餵食記錄已完成（含特殊飲食需求）" value={data.hotel_feed} onChange={v=>up("hotel_feed",v)} disabled={isLocked}/>
+      <Radio3 label="飲水已補充（確保過夜水量充足）" value={data.hotel_water} onChange={v=>up("hotel_water",v)} disabled={isLocked}/>
+      <Radio3 label="動物情緒 / 異常行為已記錄" value={data.hotel_behavior} onChange={v=>up("hotel_behavior",v)} disabled={isLocked}/>
+      <Radio3 label="所有籠門已確認鎖好" value={data.hotel_locks} onChange={v=>up("hotel_locks",v)} disabled={isLocked}/>
+      <Radio3 label="旅館區燈光 / 空調已調整至夜間模式" value={data.hotel_lights} onChange={v=>up("hotel_lights",v)} disabled={isLocked}/>
+      <AlertSel value={data.hotel_alert} onChange={v=>up("hotel_alert",v)} opts={lAlertOpts} disabled={isLocked}/>
+      <AnimalTable rows={data.hotel_animals} onChange={v=>up("hotel_animals",v)} disabled={isLocked}/>
+      <TA label="旅館收班備註 / 給早班的交代" placeholder="例：C2籠幼犬夜間可能吠叫屬正常；D4籠今晚進食量少。無則填「無」。" value={data.hotel_note} onChange={v=>up("hotel_note",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 二、收班清潔 */}
+    <SectionWrapper {...sw} sectionKey="cleaning" label="二、收班清潔（晚班負責完成）" color="#065F46" bgColor="#ECFDF5">
+      <Radio3 label="候診 / 接待區打掃" value={data.clean_waiting} onChange={v=>up("clean_waiting",v)} disabled={isLocked}/>
+      <Radio3 label="工作台清潔" value={data.clean_worktop} onChange={v=>up("clean_worktop",v)} disabled={isLocked}/>
+      <Radio3 label="垃圾已清理並更換垃圾袋" value={data.clean_trash} onChange={v=>up("clean_trash",v)} disabled={isLocked}/>
+      <Radio3 label="診療室清潔消毒" value={data.clean_clinic} onChange={v=>up("clean_clinic",v)} disabled={isLocked}/>
+      <Radio3 label="旅館走廊及公共區域" value={data.clean_corridor} onChange={v=>up("clean_corridor",v)} disabled={isLocked}/>
+      <Radio3 label="所有籠舍清潔消毒" value={data.clean_cages} onChange={v=>up("clean_cages",v)} disabled={isLocked}/>
+      <Radio3 label="廁所及排泄物處理" value={data.clean_toilet} onChange={v=>up("clean_toilet",v)} disabled={isLocked}/>
+      <Radio3 label="洗手台 / 消毒液已補充" value={data.clean_sink} onChange={v=>up("clean_sink",v)} disabled={isLocked}/>
+      <Radio3 label="烘乾設備已確認關閉" value={data.clean_dryer} onChange={v=>up("clean_dryer",v)} disabled={isLocked}/>
+      <TA label="⚠️ 收班清潔未完成項目（必填）" hint="請說明原因，由晚班填寫並負責。全部完成填「無」。" placeholder="無" value={data.clean_incomplete} onChange={v=>up("clean_incomplete",v)} disabled={isLocked} required/>
+    </SectionWrapper>
+
+    {/* 三、隔日準備 */}
+    <SectionWrapper {...sw} sectionKey="tomorrow" label="三、隔日準備" color="#1B5E20" bgColor="#E8F5E9">
+      <Radio3 label="明日預約已確認並通知相關人員" value={data.tmr_appt} onChange={v=>up("tmr_appt",v)} disabled={isLocked}/>
+      <Radio3 label="明日所需耗材 / 藥品已備妥或補單" value={data.tmr_supplies} onChange={v=>up("tmr_supplies",v)} disabled={isLocked}/>
+      <Radio3 label="客戶來電 / 訊息已回覆或記錄待早班處理" value={data.tmr_client} onChange={v=>up("tmr_client",v)} disabled={isLocked}/>
+      <Radio3 label="社群媒體 / 客戶訊息已處理" value={data.tmr_social} onChange={v=>up("tmr_social",v)} disabled={isLocked}/>
+      <FeeTable rows={data.tmr_fees} onChange={v=>up("tmr_fees",v)} disabled={isLocked}/>
+      <TA label="⚠️ 行政未完成事項（必填）" hint="請說明原因，由晚班填寫並負責。全部完成填「無」。" placeholder="無" value={data.tmr_incomplete} onChange={v=>up("tmr_incomplete",v)} disabled={isLocked} required/>
+      <TA label="給隔日早班的特別提醒" placeholder="例：明日09:00複診病貓需空腹；明日有大型美容需提早準備工具。無則填「無」。" value={data.tmr_reminder} onChange={v=>up("tmr_reminder",v)} disabled={isLocked}/>
+    </SectionWrapper>
+
+    {/* 四、閉店安全 */}
+    <SectionWrapper {...sw} sectionKey="security" label="四、閉店安全確認" color="#37474F" bgColor="#F9FAFB">
+      <Radio3 label="所有門窗已上鎖" value={data.sec_doors} onChange={v=>up("sec_doors",v)} disabled={isLocked}/>
+      <Radio3 label="非必要電器電源已關閉" value={data.sec_power} onChange={v=>up("sec_power",v)} disabled={isLocked}/>
+      <Radio3 label="監視系統 / 警報器已啟動" value={data.sec_alarm} onChange={v=>up("sec_alarm",v)} disabled={isLocked}/>
+      <Radio3 label="空調已設定或關閉" value={data.sec_ac} onChange={v=>up("sec_ac",v)} disabled={isLocked}/>
+      <Radio3 label="冰箱 / 保溫設備正常運作確認" value={data.sec_fridge} onChange={v=>up("sec_fridge",v)} disabled={isLocked}/>
+    </SectionWrapper>
+
+    {/* 五、整體評估 */}
+    <div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:10,marginBottom:10,overflow:"hidden"}}>
+      <div style={{background:"#455A64",color:"#fff",padding:"10px 14px",fontSize:15,fontWeight:600}}>五、晚班整體收班評估 ⚠️ 必填後才可送出</div>
+      <div style={rowSt}>
+        <div style={lbl}>晚班整體自評<span style={{color:"#EF4444",marginLeft:2}}>*</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[["ok","🟢 完整：所有事項均已完成"],["mostly","🟡 大致完整：少數未完成已在上方說明"],["major","🔴 重大遺漏：已致電主管"]].map(([v,l])=>
+            <button key={v} onClick={()=>!isLocked&&up("overall_selfeval",v)} style={{padding:"10px 12px",border:"1.5px solid "+(data.overall_selfeval===v?"#374151":"#E5E7EB"),borderRadius:8,background:data.overall_selfeval===v?"#F9FAFB":"#fff",color:data.overall_selfeval===v?"#111":"#6B7280",fontSize:13,fontWeight:data.overall_selfeval===v?600:400,textAlign:"left",opacity:isLocked?0.7:1}}>{l}</button>)}
+        </div>
+      </div>
+      <div style={rowSt}>
+        <div style={lbl}>是否有緊急事項需通知主管？<span style={{color:"#EF4444",marginLeft:2}}>*</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[["no","✅ 否"],["yes","🔴 是（已致電主管，備註通話時間）"]].map(([v,l])=>
+            <button key={v} onClick={()=>!isLocked&&up("overall_urgent",v)} style={{padding:"10px 12px",border:"1.5px solid "+(data.overall_urgent===v?(v==="yes"?"#991B1B":PRIMARY):"#E5E7EB"),borderRadius:8,background:data.overall_urgent===v?(v==="yes"?"#FEF2F2":"#ECFDF5"):"#fff",color:data.overall_urgent===v?(v==="yes"?"#991B1B":PRIMARY):"#6B7280",fontSize:13,fontWeight:data.overall_urgent===v?600:400,textAlign:"left",opacity:isLocked?0.7:1}}>{l}</button>)}
+        </div>
+      </div>
+      <TA label="給早班 / 主管的備註" placeholder="隔日早班特別需注意的事項。無則填「無」。" value={data.overall_note} onChange={v=>up("overall_note",v)} disabled={isLocked}/>
+    </div>
+
+    {/* 晚班聲明 */}
+    <div style={{background:"#E8EAF6",border:"0.5px solid #C5CAE9",borderRadius:10,padding:"12px 14px",marginBottom:10,fontSize:13,color:MGR,lineHeight:1.8}}>
+      📌 凡已載明的未完成工作，責任由晚班填寫人承擔，直到早班有明確完成記錄為止。<br/>
+      📌 凡未載明的未完成工作，視為已完成，後續發現問題責任由下一班（早班）承擔。
+    </div>
+
+    {/* 送出按鈕 */}
+    {!isLocked&&!isManager&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:MGR,color:"#fff",fontSize:16,fontWeight:600,marginBottom:10}}>
+      {saving?"送出中...":"送出晚班收班表"}
+    </button>}
+
+    {/* 早班到班確認 */}
+    {isLocked&&<div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:10,padding:"14px",marginBottom:10}}>
+      <div style={{fontSize:14,fontWeight:600,color:"#1B5E20",marginBottom:10}}>🌅 早班到班閱讀確認</div>
+      {nextDay
+        ? <div style={{background:"#ECFDF5",border:"0.5px solid #A7F3D0",borderRadius:8,padding:"10px 12px",fontSize:13,color:PRIMARY}}>✅ 已由 {nextDay.name} 於 {fmtDt(nextDay.at)} 確認閱讀</div>
+        : <>
+            <div style={{fontSize:13,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>早班到班後請閱讀上方晚班記錄，確認所有交接事項後點下方按鈕。</div>
+            {!isManager&&<button onClick={handleNextDayConfirm} style={{width:"100%",padding:"12px",border:"none",borderRadius:8,background:"#2E7D32",color:"#fff",fontSize:14,fontWeight:600}}>✅ 我已閱讀昨日晚班所有記錄</button>}
+            {isManager&&<div style={{fontSize:13,color:"#9CA3AF",textAlign:"center"}}>等待早班人員確認...</div>}
+          </>
+      }
+    </div>}
+  </div>;
+}
+
+// ── 今日狀態概覽 ──
+function FormStatus({date,isManager}){
+  const[eStatus,setEStatus]=useState({submitted:null,sections:{}});
+  const[lStatus,setLStatus]=useState({submitted:null,sections:{},nextDay:null});
+
+  useEffect(()=>{
+    const sectionKeys={early:["clinic","hotel","cleaning","admin"],late:["clinic","hotel","cleaning","tomorrow","security"]};
+    // Listen to early submitted
+    db.ref(`forms/${date}/early/submitted`).on("value",s=>{
+      setEStatus(p=>({...p,submitted:s.val()}));
+    });
+    db.ref(`forms/${date}/late/submitted`).on("value",s=>{
+      setLStatus(p=>({...p,submitted:s.val()}));
+    });
+    db.ref(`forms/${date}/late/nextDayConfirm`).on("value",s=>{
+      setLStatus(p=>({...p,nextDay:s.val()}));
+    });
+    // Listen to section confirmations
+    sectionKeys.early.forEach(k=>{
+      db.ref(`forms/${date}/early/sections/${k}/claimants`).on("value",s=>{
+        setEStatus(p=>({...p,sections:{...p.sections,[k]:{...p.sections[k],claimants:s.val()||{}}}}));
+      });
+      db.ref(`forms/${date}/early/sections/${k}/confirmations`).on("value",s=>{
+        setEStatus(p=>({...p,sections:{...p.sections,[k]:{...p.sections[k],confirmations:s.val()||{}}}}));
+      });
+    });
+    sectionKeys.late.forEach(k=>{
+      db.ref(`forms/${date}/late/sections/${k}/claimants`).on("value",s=>{
+        setLStatus(p=>({...p,sections:{...p.sections,[k]:{...p.sections[k],claimants:s.val()||{}}}}));
+      });
+      db.ref(`forms/${date}/late/sections/${k}/confirmations`).on("value",s=>{
+        setLStatus(p=>({...p,sections:{...p.sections,[k]:{...p.sections[k],confirmations:s.val()||{}}}}));
+      });
+    });
+    return()=>db.ref(`forms/${date}`).off();
+  },[date]);
+
+  const sectionDone=(sec)=>{
+    const c=Object.keys(sec.claimants||{}).length;
+    const k=Object.keys(sec.confirmations||{}).length;
+    return c>0&&k>=c&&Object.keys(sec.claimants||{}).every(uid=>!!(sec.confirmations||{})[uid]);
+  };
+
+  const eLabels={clinic:"診所區",hotel:"旅館區",cleaning:"清潔",admin:"行政"};
+  const lLabels={clinic:"診所收班",hotel:"旅館收班",cleaning:"收班清潔",tomorrow:"隔日準備",security:"閉店安全"};
+
+  const SectionDot=({sec,label})=>{
+    const done=sectionDone(sec||{});const claimed=Object.keys((sec||{}).claimants||{}).length>0;
+    return<div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+      <span style={{width:8,height:8,borderRadius:"50%",background:done?"#10B981":claimed?"#F59E0B":"#E5E7EB",display:"inline-block",flexShrink:0}}/>
+      <span style={{fontSize:12,color:"#374151"}}>{label}</span>
+      {!claimed&&<span style={{fontSize:11,color:"#9CA3AF"}}>（未認領）</span>}
+      {claimed&&!done&&<span style={{fontSize:11,color:"#92400E"}}>（待確認）</span>}
+      {done&&<span style={{fontSize:11,color:"#065F46"}}>✓</span>}
+    </div>;
+  };
+
+  return<div style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+    <div style={{fontSize:13,fontWeight:600,color:"#374151",marginBottom:10}}>今日表單狀況</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div>
+        <div style={{fontSize:12,fontWeight:600,color:"#1565C0",marginBottom:6}}>🌅 早班</div>
+        {Object.entries(eLabels).map(([k,l])=><SectionDot key={k} sec={eStatus.sections[k]} label={l}/>)}
+        <div style={{marginTop:6,fontSize:12,color:eStatus.submitted?"#065F46":"#9CA3AF",fontWeight:eStatus.submitted?500:400}}>
+          {eStatus.submitted?`✅ 已送出 (${eStatus.submitted.name})`:"⏳ 尚未送出"}
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:12,fontWeight:600,color:MGR,marginBottom:6}}>🌙 晚班</div>
+        {Object.entries(lLabels).map(([k,l])=><SectionDot key={k} sec={lStatus.sections[k]} label={l}/>)}
+        <div style={{marginTop:6,fontSize:12,color:lStatus.submitted?"#065F46":"#9CA3AF",fontWeight:lStatus.submitted?500:400}}>
+          {lStatus.submitted?`✅ 已送出 (${lStatus.submitted.name})`:"⏳ 尚未送出"}
+        </div>
+        {lStatus.submitted&&<div style={{marginTop:4,fontSize:12,color:lStatus.nextDay?"#065F46":"#F59E0B",fontWeight:500}}>
+          {lStatus.nextDay?`🌅 早班已閱讀 (${lStatus.nextDay.name})`:"🌅 等待早班閱讀確認"}
+        </div>}
+      </div>
+    </div>
+  </div>;
+}
+
+// ── 歷史查閱 ──
+function HistoryView({currentUser,isManager}){
+  const[date,setDate]=useState(todayKey);
+  return<div>
+    <div style={{fontSize:17,fontWeight:600,color:"#111",marginBottom:16}}>歷史查閱</div>
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:13,color:"#6B7280",marginBottom:6}}>選擇日期</div>
+      <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,padding:"10px 12px"}}/>
+    </div>
+    <FormStatus date={date} isManager={true}/>
+    <div style={{fontSize:14,fontWeight:600,color:"#1565C0",marginBottom:8}}>🌅 早班記錄</div>
+    <EarlyForm date={date} currentUser={currentUser} isManager={true}/>
+    <div style={{fontSize:14,fontWeight:600,color:MGR,marginBottom:8,marginTop:16}}>🌙 晚班記錄</div>
+    <LateForm date={date} currentUser={currentUser} isManager={true}/>
+  </div>;
+}
+
+// ── Auth Views ──
+function LoginView(){
+  const[loading,setLoading]=useState(false);const[err,setErr]=useState("");
+  const go=async()=>{setLoading(true);setErr("");try{await fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());}catch(e){setErr(e.code==="auth/popup-blocked"?"請允許彈出視窗":"登入失敗");setLoading(false);}};
+  return<div style={{maxWidth:360,margin:"0 auto",padding:"72px 24px 48px"}}>
+    <div style={{textAlign:"center",marginBottom:52}}>
+      <div style={{fontSize:56,marginBottom:12}}>🐾</div>
+      <div style={{fontSize:22,fontWeight:700}}>臻愛一生動物醫院</div>
+      <div style={{fontSize:15,color:"#9CA3AF",marginTop:6}}>跨班交接確認表</div>
+    </div>
+    <button onClick={go} disabled={loading} style={{width:"100%",padding:"16px",border:"0.5px solid #E5E7EB",borderRadius:10,background:"#fff",color:loading?"#9CA3AF":"#374151",fontSize:16,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
+      {loading?"登入中...":<><svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>使用 Google 帳號登入</>}
+    </button>
+    {err&&<div style={{marginTop:12,fontSize:13,color:"#991B1B",textAlign:"center"}}>{err}</div>}
+  </div>;
+}
+
+function RegisterView({fbu,onRegistered}){
+  const[name,setName]=useState("");const[saving,setSaving]=useState(false);
+  const isMgr=MANAGER_EMAILS.includes(fbu.email);
+  const save=async()=>{if(!name){alert("請選擇名字");return;}setSaving(true);const role=isMgr?"manager":"staff";await dbSet("users/"+fbu.uid,{name,email:fbu.email,role,active:true,createdAt:Date.now()});onRegistered({uid:fbu.uid,name,email:fbu.email,role});};
+  return<div style={{maxWidth:360,margin:"0 auto",padding:"52px 24px"}}>
+    <div style={{textAlign:"center",marginBottom:36}}>
+      <div style={{fontSize:44,marginBottom:10}}>👋</div>
+      <div style={{fontSize:18,fontWeight:600}}>歡迎，{fbu.displayName||fbu.email}</div>
+      <div style={{fontSize:14,color:"#6B7280",marginTop:6}}>請選擇你在系統中的名字</div>
+      {isMgr&&<div style={{marginTop:10,background:"#E8EAF6",borderRadius:8,padding:"6px 14px",fontSize:13,color:MGR,display:"inline-block",fontWeight:500}}>🔑 主管身分</div>}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:28}}>
+      {STAFF_NAMES.map(n=><button key={n} onClick={()=>setName(n)} style={{padding:"13px 4px",border:"1.5px solid "+(name===n?PRIMARY:"#E5E7EB"),borderRadius:8,background:name===n?"#ECFDF5":"#fff",color:name===n?PRIMARY:"#6B7280",fontSize:15,fontWeight:name===n?600:400}}>{n}</button>)}
+    </div>
+    <button onClick={save} disabled={!name||saving} style={{width:"100%",padding:"14px",border:"none",borderRadius:8,background:name&&!saving?PRIMARY:"#E5E7EB",color:name&&!saving?"#fff":"#9CA3AF",fontSize:16,fontWeight:600}}>{saving?"儲存中...":"確認並進入系統"}</button>
+  </div>;
+}
+
+// ── Main App ──
+function App(){
+  const[state,setState]=useState("loading");const[fbu,setFbu]=useState(null);const[cu,setCu]=useState(null);const[tab,setTab]=useState("today");
+
+  useEffect(()=>{
+    if(!CONFIG_READY||!fbAuth){setState("unauth");return;}
+    const unsub=fbAuth.onAuthStateChanged(async f=>{
+      if(!f){setState("unauth");setFbu(null);setCu(null);return;}
+      setFbu(f);const data=await dbGet("users/"+f.uid);
+      if(data){if(data.active===false){alert("帳號已被停用");fbAuth.signOut();return;}setCu({...data,uid:f.uid});setState("authed");}
+      else setState("registering");
+    });
+    return()=>unsub();
+  },[]);
+
+  const isManager=cu?.role==="manager";
+
+  if(!CONFIG_READY)return<div style={{maxWidth:380,margin:"0 auto",padding:"48px 20px",textAlign:"center"}}><div style={{fontSize:44}}>⚙️</div><div style={{fontSize:19,fontWeight:600,marginTop:10}}>尚未設定 Firebase</div></div>;
+  if(state==="loading")return<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",flexDirection:"column",gap:12}}><div style={{fontSize:40}}>🐾</div><div style={{fontSize:14,color:"#9CA3AF"}}>載入中...</div></div>;
+  if(state==="unauth")return<LoginView/>;
+  if(state==="registering")return<RegisterView fbu={fbu} onRegistered={u=>{setCu(u);setState("authed");}}/>;
+  if(state!=="authed"||!cu)return null;
+
+  const TABS=[{id:"today",label:"今日表單"},{id:"history",label:"歷史查閱"}];
+
+  return<div style={{maxWidth:560,margin:"0 auto",paddingBottom:70,minHeight:"100vh",background:"#F0F4F0"}}>
+    {/* Header */}
+    <div style={{background:isManager?MGR:PRIMARY,color:"#fff",padding:"13px 16px 11px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div>
+          <div style={{fontSize:11,opacity:0.7}}>臻愛一生動物醫院</div>
+          <div style={{fontSize:16,fontWeight:600,marginTop:2}}>{cu.name} {isManager&&"（主管）"}</div>
+        </div>
+        <button onClick={()=>fbAuth.signOut()} style={{fontSize:12,color:"rgba(255,255,255,0.6)",background:"none",border:"0.5px solid rgba(255,255,255,0.25)",borderRadius:6,padding:"4px 8px"}}>登出</button>
+      </div>
+    </div>
+
+    {/* Tab Bar */}
+    <div style={{background:"#fff",borderBottom:"0.5px solid #E5E7EB",display:"flex"}}>
+      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:"12px",border:"none",background:"none",fontSize:14,fontWeight:tab===t.id?600:400,color:tab===t.id?(isManager?MGR:PRIMARY):"#9CA3AF",borderBottom:tab===t.id?"2px solid "+(isManager?MGR:PRIMARY):"2px solid transparent"}}>{t.label}</button>)}
+    </div>
+
+    <div style={{padding:"14px 12px 0"}}>
+      {tab==="today"&&<div>
+        <div style={{fontSize:15,fontWeight:600,color:"#374151",marginBottom:2}}>{fmtDate(todayKey())}</div>
+        <div style={{fontSize:12,color:"#9CA3AF",marginBottom:14}}>點「我負責此區」認領區塊，填寫後點「確認本區內容正確」</div>
+        <FormStatus date={todayKey()} isManager={isManager}/>
+        <EarlyForm date={todayKey()} currentUser={cu} isManager={isManager}/>
+        <div style={{height:1,background:"#E5E7EB",margin:"16px 0"}}/>
+        <LateForm date={todayKey()} currentUser={cu} isManager={isManager}/>
+      </div>}
+      {tab==="history"&&<HistoryView currentUser={cu} isManager={isManager}/>}
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

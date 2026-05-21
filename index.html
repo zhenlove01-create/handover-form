@@ -195,9 +195,9 @@ function SectionWrapper({date,shift,sectionKey,label,color,bgColor,currentUser,i
               {confirmed?"✅ ":"⏳ "}{name}
             </span>;
           })}
-          {!isManager&&<button onClick={toggleClaim} style={{marginLeft:"auto",padding:"5px 12px",border:"1.5px solid "+(isClaimed?color:"#D1D5DB"),borderRadius:8,background:isClaimed?bgColor:"#fff",color:isClaimed?color:"#6B7280",fontSize:12,fontWeight:isClaimed?600:400,flexShrink:0}}>
+          <button onClick={toggleClaim} style={{marginLeft:"auto",padding:"5px 12px",border:"1.5px solid "+(isClaimed?color:"#D1D5DB"),borderRadius:8,background:isClaimed?bgColor:"#fff",color:isClaimed?color:"#6B7280",fontSize:12,fontWeight:isClaimed?600:400,flexShrink:0}}>
             {isClaimed?"取消認領":"我負責此區"}
-          </button>}
+          </button>
         </div>
       </div>
 
@@ -205,11 +205,11 @@ function SectionWrapper({date,shift,sectionKey,label,color,bgColor,currentUser,i
       <div>{children}</div>
 
       {/* 確認按鈕 */}
-      {!isManager&&isClaimed&&!isConfirmed&&<div style={{padding:"12px 14px",borderTop:"0.5px solid #F3F4F6"}}>
+      {isClaimed&&!isConfirmed&&<div style={{padding:"12px 14px",borderTop:"0.5px solid #F3F4F6"}}>
         <button onClick={doConfirm} style={{width:"100%",padding:"12px",border:"none",borderRadius:8,background:color,color:"#fff",fontSize:14,fontWeight:600}}>確認本區內容正確</button>
         <div style={{fontSize:11,color:"#9CA3AF",textAlign:"center",marginTop:6}}>確認後代表你對本區內容負責</div>
       </div>}
-      {!isManager&&isClaimed&&isConfirmed&&<div style={{padding:"10px 14px",borderTop:"0.5px solid #F3F4F6",background:"#ECFDF5",textAlign:"center",fontSize:13,color:"#065F46",fontWeight:500}}>✅ 你已確認本區內容</div>}
+      {isClaimed&&isConfirmed&&<div style={{padding:"10px 14px",borderTop:"0.5px solid #F3F4F6",background:"#ECFDF5",textAlign:"center",fontSize:13,color:"#065F46",fontWeight:500}}>✅ 你已確認本區內容</div>}
     </div>}
   </div>;
 }
@@ -245,9 +245,35 @@ function EarlyForm({date,currentUser,isManager}){
   ];
 
   // submit: 需確認所有 section 都有至少一人確認
+  const EARLY_SECTIONS=["clinic","hotel","cleaning","admin"];
+
+  const checkAllSectionsClaimed=async(sections)=>{
+    for(const k of sections){
+      const v=await dbGet(base+"/sections/"+k+"/claimants");
+      if(!v||Object.keys(v).length===0)return k;
+    }
+    return null;
+  };
+
+  const checkAllSectionsConfirmed=async(sections)=>{
+    for(const k of sections){
+      const claimants=await dbGet(base+"/sections/"+k+"/claimants");
+      const confirmations=await dbGet(base+"/sections/"+k+"/confirmations");
+      if(!claimants||Object.keys(claimants).length===0)return{k,reason:"未認領"};
+      const allConfirmed=Object.keys(claimants).every(uid=>confirmations&&confirmations[uid]);
+      if(!allConfirmed)return{k,reason:"未全員確認"};
+    }
+    return null;
+  };
+
+  const SECTION_LABELS={clinic:"診所區",hotel:"旅館區",cleaning:"清潔區",admin:"行政區"};
+
   const handleSubmit=async()=>{
     if(!data.overall_selfeval){alert("請完成「整體評估」必填欄位");return;}
     if(!data.overall_urgent){alert("請填寫是否有緊急事項");return;}
+    // 檢查所有區塊是否已被認領且確認
+    const problem=await checkAllSectionsConfirmed(EARLY_SECTIONS);
+    if(problem){alert("「"+SECTION_LABELS[problem.k]+"」"+problem.reason+"，請確認所有區塊都有人認領並點確認後再送出。");return;}
     if(!confirm("確定送出早班交接表？送出後記錄永久保存。"))return;
     setSaving(true);
     await dbSet(base+"/submitted",{by:currentUser.uid,name:currentUser.name,at:Date.now()});
@@ -336,7 +362,7 @@ function EarlyForm({date,currentUser,isManager}){
       📌 凡未載明的未完成工作，視為已完成，後續發現問題責任由晚班承擔。
     </div>
 
-    {!isLocked&&!isManager&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:"#1565C0",color:"#fff",fontSize:16,fontWeight:600,marginBottom:16}}>
+    {!isLocked&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:"#1565C0",color:"#fff",fontSize:16,fontWeight:600,marginBottom:16}}>
       {saving?"送出中...":"送出早班交接表"}
     </button>}
   </div>;
@@ -368,9 +394,26 @@ function LateForm({date,currentUser,isManager}){
     {v:"ok",c:"ok",l:"🟢 全部穩定"},
   ];
 
+  const LATE_SECTIONS=["clinic","hotel","cleaning","tomorrow","security"];
+  const LATE_SECTION_LABELS={clinic:"診所收班",hotel:"旅館收班",cleaning:"收班清潔",tomorrow:"隔日準備",security:"閉店安全"};
+
+  const checkAllSectionsConfirmedLate=async()=>{
+    for(const k of LATE_SECTIONS){
+      const claimants=await dbGet(base+"/sections/"+k+"/claimants");
+      const confirmations=await dbGet(base+"/sections/"+k+"/confirmations");
+      if(!claimants||Object.keys(claimants).length===0)return{k,reason:"未認領"};
+      const allConfirmed=Object.keys(claimants).every(uid=>confirmations&&confirmations[uid]);
+      if(!allConfirmed)return{k,reason:"未全員確認"};
+    }
+    return null;
+  };
+
   const handleSubmit=async()=>{
     if(!data.overall_selfeval){alert("請完成「整體評估」必填欄位");return;}
     if(!data.overall_urgent){alert("請填寫是否有緊急事項");return;}
+    // 檢查所有區塊是否已被認領且確認
+    const problem=await checkAllSectionsConfirmedLate();
+    if(problem){alert("「"+LATE_SECTION_LABELS[problem.k]+"」"+problem.reason+"，請確認所有區塊都有人認領並點確認後再送出。");return;}
     if(!confirm("確定送出晚班收班表？送出後記錄永久保存。"))return;
     setSaving(true);
     await dbSet(base+"/submitted",{by:currentUser.uid,name:currentUser.name,at:Date.now()});
@@ -485,7 +528,7 @@ function LateForm({date,currentUser,isManager}){
     </div>
 
     {/* 送出按鈕 */}
-    {!isLocked&&!isManager&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:MGR,color:"#fff",fontSize:16,fontWeight:600,marginBottom:10}}>
+    {!isLocked&&<button onClick={handleSubmit} disabled={saving} style={{width:"100%",padding:"15px",border:"none",borderRadius:8,background:MGR,color:"#fff",fontSize:16,fontWeight:600,marginBottom:10}}>
       {saving?"送出中...":"送出晚班收班表"}
     </button>}
 
@@ -496,8 +539,7 @@ function LateForm({date,currentUser,isManager}){
         ? <div style={{background:"#ECFDF5",border:"0.5px solid #A7F3D0",borderRadius:8,padding:"10px 12px",fontSize:13,color:PRIMARY}}>✅ 已由 {nextDay.name} 於 {fmtDt(nextDay.at)} 確認閱讀</div>
         : <>
             <div style={{fontSize:13,color:"#6B7280",marginBottom:10,lineHeight:1.6}}>早班到班後請閱讀上方晚班記錄，確認所有交接事項後點下方按鈕。</div>
-            {!isManager&&<button onClick={handleNextDayConfirm} style={{width:"100%",padding:"12px",border:"none",borderRadius:8,background:"#2E7D32",color:"#fff",fontSize:14,fontWeight:600}}>✅ 我已閱讀昨日晚班所有記錄</button>}
-            {isManager&&<div style={{fontSize:13,color:"#9CA3AF",textAlign:"center"}}>等待早班人員確認...</div>}
+            <button onClick={handleNextDayConfirm} style={{width:"100%",padding:"12px",border:"none",borderRadius:8,background:"#2E7D32",color:"#fff",fontSize:14,fontWeight:600}}>✅ 我已閱讀昨日晚班所有記錄</button>
           </>
       }
     </div>}

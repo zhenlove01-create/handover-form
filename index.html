@@ -113,28 +113,129 @@ function AnimalTable({rows,onChange,disabled}){
   </div>;
 }
 
-function FeeTable({rows,onChange,disabled}){
-  const r=rows||[];
-  const add=()=>onChange([...r,{name:"",item:"",amount:"",status:"pending",date:"",note:""}]);
-  const upd=(i,k,v)=>{const nr=[...r];nr[i]={...nr[i],[k]:v};onChange(nr);};
-  const del=(i)=>onChange(r.filter((_,j)=>j!==i));
-  const stO=[{v:"pending",l:"待收",c:"#92400E",bg:"#FFFBEB"},{v:"paid",l:"已收",c:"#065F46",bg:"#ECFDF5"},{v:"refund",l:"退款待辦",c:"#1E40AF",bg:"#EFF6FF"}];
+// ── 跨日費用追蹤（全域 pending_fees 路徑，不隨日期重置）──
+function PersistentFeeTable({currentUser}){
+  const[fees,setFees]=useState({});
+  const[showCleared,setShowCleared]=useState(false);
+
+  useEffect(()=>{
+    const ref=db.ref("pending_fees");
+    ref.on("value",s=>setFees(s.val()||{}));
+    return()=>ref.off();
+  },[]);
+
+  // 計算建立日到今天的天數
+  const daysSince=d=>{
+    if(!d)return 0;
+    const diff=new Date(todayKey())-new Date(d+"T00:00:00");
+    return Math.max(0,Math.floor(diff/86400000));
+  };
+
+  const feeList=Object.entries(fees).map(([id,f])=>({id,...f}))
+    .sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  const pending=feeList.filter(f=>f.status!=="paid");
+  const cleared=feeList.filter(f=>f.status==="paid")
+    .sort((a,b)=>(b.clearedAt||0)-(a.clearedAt||0));
+
+  const add=async()=>{
+    const id="fee_"+Date.now();
+    await dbSet("pending_fees/"+id,{
+      name:"",item:"",amount:"",status:"pending",note:"",
+      createdDate:todayKey(),createdAt:Date.now(),
+      createdBy:currentUser?.name||""
+    });
+  };
+
+  const upd=async(id,k,v)=>{
+    const patch={[k]:v};
+    if(k==="status"&&v==="paid"){
+      patch.clearedAt=Date.now();
+      patch.clearedBy=currentUser?.name||"";
+    }
+    await dbUpd("pending_fees/"+id,patch);
+  };
+
+  const del=async(id)=>{
+    if(!confirm("確定刪除此費用記錄？此操作無法復原。"))return;
+    await dbDel("pending_fees/"+id);
+  };
+
+  const stO=[
+    {v:"pending",l:"⏳ 待收",c:"#92400E",bg:"#FFFBEB"},
+    {v:"paid",   l:"✅ 已收",c:"#065F46",bg:"#ECFDF5"},
+    {v:"refund", l:"🔄 退款待辦",c:"#1E40AF",bg:"#EFF6FF"}
+  ];
   const i2={width:"100%",border:"0.5px solid #E5E7EB",borderRadius:6,padding:"6px 8px",fontSize:13,background:"#fff"};
+
   return<div style={{...rowSt,background:"#FFFBEB"}}>
-    <div style={lbl}>💰 未結費用追蹤</div>
-    {r.map((f,i)=><div key={i} style={{background:"#fff",border:"0.5px solid #E5E7EB",borderRadius:8,padding:10,marginBottom:8}}>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
-        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>動物名</div><input value={f.name} onChange={e=>upd(i,"name",e.target.value)} style={i2} disabled={disabled}/></div>
-        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>費用項目</div><input value={f.item} onChange={e=>upd(i,"item",e.target.value)} style={i2} disabled={disabled}/></div>
-        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>金額</div><input value={f.amount} onChange={e=>upd(i,"amount",e.target.value)} style={i2} disabled={disabled}/></div>
-        <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>首次記錄日</div><input value={f.date} onChange={e=>upd(i,"date",e.target.value)} style={i2} disabled={disabled}/></div>
+    {/* 標題列 */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <div style={{...lbl,marginBottom:0}}>
+        💰 未結費用追蹤
+        <span style={{fontSize:11,fontWeight:400,color:"#92400E",marginLeft:6}}>（跨日自動保留）</span>
       </div>
-      <div style={{display:"flex",gap:4,marginBottom:6}}>
-        {stO.map(o=><button key={o.v} onClick={()=>!disabled&&upd(i,"status",o.v)} style={{flex:1,padding:"6px 4px",border:"1.5px solid "+(f.status===o.v?"currentColor":"#E5E7EB"),borderRadius:6,background:f.status===o.v?o.bg:"#fff",color:f.status===o.v?o.c:"#9CA3AF",fontSize:12,fontWeight:f.status===o.v?600:400}}>{o.l}</button>)}
-      </div>
-      {!disabled&&<button onClick={()=>del(i)} style={{width:"100%",padding:"6px",border:"0.5px solid #FECACA",borderRadius:6,background:"#FEF2F2",color:"#991B1B",fontSize:12}}>移除</button>}
-    </div>)}
-    {!disabled&&<button onClick={add} style={{width:"100%",padding:"10px",border:"1.5px dashed #D97706",borderRadius:8,background:"#FFFBEB",color:"#92400E",fontSize:13,fontWeight:500}}>+ 新增費用記錄</button>}
+      {pending.length>0&&<span style={{fontSize:12,background:"#FEF3C7",color:"#92400E",borderRadius:10,padding:"3px 10px",fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{pending.length} 筆待處理</span>}
+    </div>
+
+    {/* 空狀態 */}
+    {pending.length===0&&<div style={{fontSize:13,color:"#9CA3AF",textAlign:"center",padding:"14px 0",marginBottom:6}}>✅ 目前無未結費用</div>}
+
+    {/* 待處理費用列表 */}
+    {pending.map(f=>{
+      const days=daysSince(f.createdDate);
+      const isOld=days>=3;
+      const borderColor=isOld?"#FCA5A5":f.status==="refund"?"#93C5FD":"#FCD34D";
+      return<div key={f.id} style={{background:"#fff",border:"1.5px solid "+borderColor,borderRadius:8,padding:10,marginBottom:8}}>
+        {/* 頂部：建立資訊 + 天數標籤 */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{fontSize:11,color:"#9CA3AF"}}>📅 {f.createdDate} · {f.createdBy||"—"} 建立</div>
+          {days>0&&<span style={{fontSize:11,background:isOld?"#FEE2E2":"#FEF3C7",color:isOld?"#991B1B":"#92400E",borderRadius:6,padding:"2px 8px",fontWeight:600,flexShrink:0,marginLeft:6}}>
+            {isOld?"⚠️ ":""}已 {days} 天未結
+          </span>}
+        </div>
+
+        {/* 欄位 */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+          <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>動物名</div>
+            <input value={f.name||""} onChange={e=>upd(f.id,"name",e.target.value)} style={i2} placeholder="例：Bagel"/></div>
+          <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>費用項目</div>
+            <input value={f.item||""} onChange={e=>upd(f.id,"item",e.target.value)} style={i2} placeholder="例：診療費"/></div>
+          <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>金額（NT$）</div>
+            <input value={f.amount||""} onChange={e=>upd(f.id,"amount",e.target.value)} style={i2} placeholder="例：1500"/></div>
+          <div><div style={{fontSize:11,color:"#9CA3AF",marginBottom:3}}>備註 / 聯絡</div>
+            <input value={f.note||""} onChange={e=>upd(f.id,"note",e.target.value)} style={i2} placeholder="例：待飼主回電"/></div>
+        </div>
+
+        {/* 狀態切換 */}
+        <div style={{display:"flex",gap:4,marginBottom:8}}>
+          {stO.map(o=><button key={o.v} onClick={()=>upd(f.id,"status",o.v)}
+            style={{flex:1,padding:"8px 4px",border:"1.5px solid "+(f.status===o.v?"currentColor":"#E5E7EB"),borderRadius:6,background:f.status===o.v?o.bg:"#fff",color:f.status===o.v?o.c:"#9CA3AF",fontSize:12,fontWeight:f.status===o.v?600:400}}>
+            {o.l}
+          </button>)}
+        </div>
+
+        <button onClick={()=>del(f.id)} style={{width:"100%",padding:"5px",border:"0.5px solid #FECACA",borderRadius:6,background:"#FEF2F2",color:"#991B1B",fontSize:11}}>移除此記錄</button>
+      </div>;
+    })}
+
+    {/* 新增按鈕 */}
+    <button onClick={add} style={{width:"100%",padding:"10px",border:"1.5px dashed #D97706",borderRadius:8,background:"#FFFBEB",color:"#92400E",fontSize:13,fontWeight:500,marginBottom:8}}>
+      + 新增費用記錄
+    </button>
+
+    {/* 已結清紀錄（可展開） */}
+    {cleared.length>0&&<div>
+      <button onClick={()=>setShowCleared(s=>!s)} style={{fontSize:12,color:"#6B7280",background:"none",border:"none",padding:"4px 0",cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+        {showCleared?"▲ 隱藏":"▼ 顯示"}已結清紀錄（{cleared.length} 筆）
+      </button>
+      {showCleared&&<div style={{marginTop:6}}>
+        {cleared.slice(0,20).map(f=><div key={f.id} style={{background:"#F9FAFB",border:"0.5px solid #D1FAE5",borderRadius:8,padding:"8px 10px",marginBottom:4}}>
+          <div style={{fontSize:12,color:"#065F46",fontWeight:500}}>✅ {f.name||"—"} · {f.item||"—"}{f.amount?" NT$"+f.amount:""}</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>建立 {f.createdDate}（{f.createdBy||"—"}）→ 由 <strong>{f.clearedBy||"—"}</strong> 於 {fmtDt(f.clearedAt)} 結清</div>
+          {f.note&&<div style={{fontSize:11,color:"#6B7280",marginTop:2}}>備註：{f.note}</div>}
+        </div>)}
+      </div>}
+    </div>}
   </div>;
 }
 
@@ -332,7 +433,7 @@ function EarlyForm({date,currentUser,isManager}){
       <Radio3 label="今日帳款已核對，待收款已記錄" value={data.admin_accounts} onChange={v=>up("admin_accounts",v)} disabled={isLocked}/>
       <Radio3 label="客戶來電 / 訊息已回覆或記錄待辦" value={data.admin_calls} onChange={v=>up("admin_calls",v)} disabled={isLocked}/>
       <Radio3 label="設備異常已通報維修" value={data.admin_equipment} onChange={v=>up("admin_equipment",v)} disabled={isLocked}/>
-      <FeeTable rows={data.admin_fees} onChange={v=>up("admin_fees",v)} disabled={isLocked}/>
+      <PersistentFeeTable currentUser={currentUser}/>
       <TA label="⚠️ 早班行政未完成事項（必填）" hint="請說明原因，由早班填寫並負責。全部完成填「無」。" placeholder="無" value={data.admin_incomplete} onChange={v=>up("admin_incomplete",v)} disabled={isLocked} required/>
     </SectionWrapper>
 
@@ -487,7 +588,7 @@ function LateForm({date,currentUser,isManager}){
       <Radio3 label="明日所需耗材 / 藥品已備妥或補單" value={data.tmr_supplies} onChange={v=>up("tmr_supplies",v)} disabled={isLocked}/>
       <Radio3 label="客戶來電 / 訊息已回覆或記錄待早班處理" value={data.tmr_client} onChange={v=>up("tmr_client",v)} disabled={isLocked}/>
       <Radio3 label="社群媒體 / 客戶訊息已處理" value={data.tmr_social} onChange={v=>up("tmr_social",v)} disabled={isLocked}/>
-      <FeeTable rows={data.tmr_fees} onChange={v=>up("tmr_fees",v)} disabled={isLocked}/>
+      <PersistentFeeTable currentUser={currentUser}/>
       <TA label="⚠️ 行政未完成事項（必填）" hint="請說明原因，由晚班填寫並負責。全部完成填「無」。" placeholder="無" value={data.tmr_incomplete} onChange={v=>up("tmr_incomplete",v)} disabled={isLocked} required/>
       <TA label="給隔日早班的特別提醒" placeholder="例：明日09:00複診病貓需空腹；明日有大型美容需提早準備工具。無則填「無」。" value={data.tmr_reminder} onChange={v=>up("tmr_reminder",v)} disabled={isLocked}/>
     </SectionWrapper>
